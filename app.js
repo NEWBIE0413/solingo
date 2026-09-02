@@ -1,7 +1,7 @@
 /* Solingo engine. Knows nothing about any language: everything comes from courses/<id>.json (see docs/COURSE.md). */
 
 // ================= course =================
-let COURSE=null, ORDER=[], FREE=new Set(), WORDS=[], SETS=[], JOIN='';
+let COURSE=null, ORDER=[], FREE=new Set(), WORDS=[], SETS=[], JOIN='', AUDIO=null, AUDIO_DIR='';
 const rom=k=>COURSE.items[k]?.r??k;
 function tok(w){const o=[];for(let i=0;i<w.length;i++){if(i+1<w.length&&JOIN.includes(w[i+1])){o.push(w[i]+w[i+1]);i++}else o.push(w[i])}return o}
 const wordKana=w=>tok(w).filter(k=>!FREE.has(k));
@@ -9,6 +9,9 @@ async function loadCourse(id){
   const c=await (await fetch(`courses/${id}.json`)).json();
   COURSE=c;ORDER=c.order;FREE=new Set(Object.keys(c.items).filter(k=>c.items[k].free));WORDS=c.words.map(w=>[w.t,w.m]);SETS=c.sets;JOIN=c.tokenize?.joiners||'';
   document.title=`Solingo · ${c.title}`;
+  // Pre-rendered audio (courses/<id>-audio/index.json maps text → file). Like the clone's per-option mp3s; TTS is only the fallback.
+  AUDIO_DIR=c.audio||`courses/${id}-audio/`;
+  try{AUDIO=await (await fetch(AUDIO_DIR+'index.json')).json()}catch{AUDIO=null}
 }
 
 // ================= state =================
@@ -38,16 +41,24 @@ function voicesFor(){const lang=(COURSE?.lang||'').toLowerCase(),base=lang.split
   return speechSynthesis.getVoices().filter(v=>v.lang.replace('_','-').toLowerCase().startsWith(base)&&!NOVELTY.test(v.name))
     .sort((a,b)=>(hint&&hint.test(b.name))-(hint&&hint.test(a.name))||(/premium|enhanced/i.test(b.name))-(/premium|enhanced/i.test(a.name)))}
 function pickVoice(){const vs=voicesFor();if(!vs.length)return voice=null;
-  if(S?.voice){const v=vs.find(v=>v.name===S.voice);if(v)return voice=v}
+  if(S?.voice&&S.voice!=='__file'){const v=vs.find(v=>v.name===S.voice);if(v)return voice=v}
   const hint=COURSE?.voiceHint?new RegExp(COURSE.voiceHint,'i'):null;
   return voice=vs.find(v=>hint&&hint.test(v.name)&&/premium|enhanced|고급|향상/i.test(v.name))||vs.find(v=>hint&&hint.test(v.name))||vs[0]}
 try{speechSynthesis.onvoiceschanged=()=>{pickVoice();if($('#perm').classList.contains('on'))renderVoices()}}catch{}
 function unlockAudio(){
   try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();AC.resume()}catch{}
   for(const a of Object.values(SND)){try{a.volume=0;a.play().then(()=>{a.pause();a.currentTime=0;a.volume=1}).catch(()=>{a.volume=1})}catch{}}
+  // iOS unlocks <audio> per element: prime the first clips too
+  if(AUDIO){for(const t of Object.keys(AUDIO).slice(0,0)){}}
   try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}catch{}
 }
-function speak(t,force){if(!soundOn&&!force)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=COURSE.lang;u.rate=.9;u.pitch=1.05;const v=voice||pickVoice();if(v)u.voice=v;setTimeout(()=>speechSynthesis.speak(u),40)}catch{}}
+const clipCache={};
+function clip(t){if(!AUDIO||!AUDIO[t])return null;return clipCache[t]||(clipCache[t]=new Audio(AUDIO_DIR+AUDIO[t]))}
+let curClip=null;
+function speak(t,force){if(!soundOn&&!force)return;
+  const a=(!S?.voice||S.voice==='__file')&&clip(t);
+  if(a){try{if(curClip){curClip.pause()}speechSynthesis.cancel();curClip=a;a.currentTime=0;a.play().catch(()=>{})}catch{}return}
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=COURSE.lang;u.rate=.9;u.pitch=1.05;const v=voice||pickVoice();if(v)u.voice=v;setTimeout(()=>speechSynthesis.speak(u),40)}catch{}}
 function tone(seq,type='sine',vol=.18){if(!soundOn||!AC)return;try{const t0=AC.currentTime;seq.forEach(([f0,f1,dt,dur])=>{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.setValueAtTime(f0,t0+dt);o.frequency.exponentialRampToValueAtTime(f1,t0+dt+dur);g.gain.setValueAtTime(0,t0+dt);g.gain.linearRampToValueAtTime(vol,t0+dt+.008);g.gain.exponentialRampToValueAtTime(.001,t0+dt+dur);o.connect(g).connect(AC.destination);o.start(t0+dt);o.stop(t0+dt+dur+.05)})}catch{}}
 const play=a=>{if(!soundOn)return;try{a.currentTime=0;a.play().catch(()=>{})}catch{}};
 const sfx={
@@ -59,8 +70,10 @@ function haptic(kind){
   try{navigator.vibrate&&navigator.vibrate(kind==='tap'?8:kind==='ok'?14:kind==='no'?[24,40,24]:[10,30,10,30,30])}catch{}
   try{const h=$('#hapt');if(h)h.click()}catch{}
 }
-function renderVoices(){const vs=voicesFor();const w=$('#voice-wrap');if(!vs.length){w.style.display='none';return}w.style.display='';
-  $('#voices').innerHTML=vs.map(v=>`<button class="voice ${voice&&v.name===voice.name?'on':''}" data-v="${v.name}"><span><b>${v.name}</b><span>${v.lang}${v.localService?'':' · 온라인'}</span></span><span>▶</span></button>`).join('');
+function renderVoices(){const vs=voicesFor();const w=$('#voice-wrap');const rec=AUDIO?[{name:'__file',label:COURSE.audioLabel||'녹음된 음성 (추천)',sub:'신경망 TTS로 미리 렌더링'}]:[];
+  if(!vs.length&&!rec.length){w.style.display='none';return}w.style.display='';
+  const cur=S.voice||(AUDIO?'__file':voice?.name);
+  $('#voices').innerHTML=[...rec,...vs.map(v=>({name:v.name,label:v.name,sub:v.lang+(v.localService?'':' · 온라인')}))].map(v=>`<button class="voice ${cur===v.name?'on':''}" data-v="${v.name}"><span><b>${v.label}</b><span>${v.sub}</span></span><span>▶</span></button>`).join('');
   $('#voices').onclick=e=>{const b=e.target.closest('.voice');if(!b)return;S.voice=b.dataset.v;save();pickVoice();$$('.voice').forEach(x=>x.classList.toggle('on',x===b));unlockAudio();speak(COURSE.words[Math.floor(Math.random()*Math.min(8,COURSE.words.length))].t,true)}}
 function askPerm(cb){$('#perm').classList.add('on');$('#perm-note').textContent=('speechSynthesis' in window)?'':'이 브라우저는 음성 합성을 지원하지 않아요. 효과음만 나옵니다.';
   renderVoices();
@@ -80,7 +93,8 @@ function renderHome(){
   const L=learned();
   $('#h-streak').textContent=streak;$('#h-xp').textContent=S.xp;$('#h-known').textContent=L.filter(k=>lvl(k)>=3).length;
   const nxt=ORDER.filter(k=>!S.k[k]).slice(0,3); const ss=savedSession();
-  $('#start').firstChild.textContent=ss?'이어서 하기':'학습 시작하기';
+  $('#bubble').textContent=ss?'Continue':'Start';
+  $('#ring').style.setProperty('--p',ss?Math.round(ss.si/ss.steps.length*100):0);
   $('#start-sub').textContent=ss?`${ss.si} / ${ss.steps.length} 진행 중`:L.length===0?`첫 글자 ${ORDER.slice(0,3).join(' ')}부터`:nxt.length?`복습 + 새 글자 ${nxt.join(' ')}`:'전체 복습';
   const cell=k=>k?`<div class="cell ${S.k[k]?'':'new'} ${lvl(k)>=5?'gold':''}"><i style="height:${lvl(k)/5*100}%"></i><span class="k kana">${k}</span><span class="r">${rom(k)}</span></div>`:'<div class="cell empty"></div>';
   const pct=list=>Math.round(list.reduce((a,k)=>a+lvl(k),0)/(list.length*5)*100)+'%';
@@ -128,8 +142,8 @@ function startSession(){
 }
 $('#start').addEventListener('click',()=>{sfx.tap();haptic('tap');if(S.sound===null)askPerm(startSession);else{if(S.sound){soundOn=true;unlockAudio()}startSession()}});
 $('#l-x').addEventListener('click',()=>{persist();save();state='idle';$('#lesson').classList.remove('on');renderHome();toast('저장했어요. 이어서 할 수 있어요')});
-function setFoot(mode,label,verdict=''){const f=$('#l-foot');f.className='foot'+(mode?' '+mode:'');const b=$('#l-btn');b.textContent=label;b.className='btn block '+(mode==='ok'?'green':mode==='no'?'rose':'green');$('#l-verdict').innerHTML=verdict}
-function lock(v){const b=$('#l-btn');b.disabled=v;b.classList.toggle('locked',v);b.classList.toggle('green',!v)}
+function setFoot(mode,label,verdict=''){const f=$('#l-foot');f.className='foot'+(mode?' '+mode:'');const b=$('#l-btn');b.textContent=label;b.className='btn sm '+(mode==='no'?'danger':'secondary');$('#l-verdict').innerHTML=verdict}
+function lock(v){const b=$('#l-btn');b.disabled=v}
 function renderStep(){
   if(si>=steps.length)return finish();
   const s=steps[si]; state='answer'; checkFn=null;
@@ -144,7 +158,7 @@ function wave(el,cls){const w=document.createElement('span');w.className='wave';
 function onResult(r){
   const s=steps[si]; lock(false);
   if(r===true){state='next';score.ok++;combo++;const c=$('#l-combo');c.textContent=combo>=2?`🔥${combo}`:'';c.classList.add('bump');setTimeout(()=>c.classList.remove('bump'),250);
-    sfx.ok();haptic('ok');flyXP();setFoot('ok','계속',`<span class="ci">✓</span>맞았어요${combo>=3?` <small>${combo}연속</small>`:''}`);wave($('#l-foot'))}
+    sfx.ok();haptic('ok');flyXP();setFoot('ok','계속',`<span class="ci">✓</span>잘했어요!${combo>=3?` <small>${combo}연속</small>`:''}`);wave($('#l-foot'))}
   else if(r===false){state='next';score.no++;combo=0;$('#l-combo').textContent='';sfx.no();haptic('no');setFoot('no','계속',`<span class="ci">✕</span>정답 <small>${s.sol||''}</small>`);
     steps.splice(Math.min(steps.length,si+2+Math.floor(Math.random()*3)),0,{...s,retry:true})}
   else {state='next';setFoot('','다음')}
@@ -175,7 +189,7 @@ function trace(s,b,word){
   b.innerHTML=`<div class="prompt">${word?'단어를 써보세요':'따라 써보세요'}</div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span class="romaji">${word?tok(word).map(rom).join(' '):rom(target)}</span><button class="spk" data-say="${target}">🔊</button></div>
   <canvas class="pad ${word?'wide':''}"></canvas>
-  <div class="padrow"><button class="btn" data-a="clear">지우기</button><button class="btn" data-a="ghost">본보기 숨기기</button></div>
+  <div class="padrow"><button class="btn" data-a="clear">지우기</button><button class="btn primaryOutline" data-a="ghost">본보기 숨기기</button></div>
   <p class="tiny" style="text-align:center;margin-top:10px">본보기 없이도 써지면 확인. 획 인식은 없어요, 솔직하게.</p>`;
   const cv=$('canvas',b); let ghost=true; const dpr=devicePixelRatio||1; const strokes=[]; let cur=null;
   function draw(){const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);const W=cv.width/dpr,H=cv.height/dpr;c.clearRect(0,0,W,H);
@@ -185,7 +199,7 @@ function trace(s,b,word){
     for(const st of [...strokes,cur].filter(Boolean)){c.beginPath();st.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.stroke()}}
   const fit=()=>{const r=cv.getBoundingClientRect();if(!r.width)return requestAnimationFrame(fit);cv.width=r.width*dpr;cv.height=r.height*dpr;draw()};
   const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
-  cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);cur=[pt(e)];draw();e.preventDefault()});
+  cv.addEventListener('pointerdown',e=>{try{cv.setPointerCapture(e.pointerId)}catch{}cur=[pt(e)];draw();e.preventDefault()});
   cv.addEventListener('pointermove',e=>{if(!cur)return;cur.push(pt(e));draw()});
   const up=()=>{if(cur){strokes.push(cur);cur=null;draw();lock(false)}};
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
@@ -268,7 +282,7 @@ function finish(){
   ${newK.length?`<div class="tiny" style="margin-top:10px">오늘 새로 배운 글자</div><div class="newk kana">${newK.map(k=>`<span>${k}</span>`).join('')}</div>`:''}
   <div class="result"><div class="rcard xp"><div class="h">Total XP</div><div class="v">⚡️ ${xp}</div></div><div class="rcard acc"><div class="h">정확도</div><div class="v">${pct}%</div></div><div class="rcard streak"><div class="h">연속일</div><div class="v">🔥 ${streak}</div></div></div>
   <p class="tiny" style="margin-top:16px">${pct<75?'한 세션 더 하면 새 글자 대신 복습이 나와요. 그게 맞아요.':'좋아요. 한 세션 더 하면 다음 글자가 열립니다.'}</p></div>`;
-  setFoot('','한 세션 더'); lock(false); state='home';
+  setFoot('','계속'); lock(false); state='home';
 }
 function confetti(){const cv=$('#confetti');const c=cv.getContext('2d');cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;c.scale(devicePixelRatio,devicePixelRatio);
   const cols=['#ffc800','#1cb0f6','#58cc02','#ff4b4b','#ff9600','#ce82ff'];const P=Array.from({length:140},()=>({x:innerWidth/2+(Math.random()-.5)*120,y:innerHeight*.45,vx:(Math.random()-.5)*14,vy:-Math.random()*16-6,r:Math.random()*6+3,c:cols[Math.random()*cols.length|0],a:Math.random()*6,va:(Math.random()-.5)*.4}));

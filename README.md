@@ -25,20 +25,25 @@ obvious next one.
   accepted). Skippable when recognition is unavailable.
 - **Leave any time.** Progress is saved after every step; the home button becomes *이어서 하기*.
 - **Sound that actually plays on iPhone.** The first tap opens a "turn on sound?" sheet, which
-  is the user gesture Safari needs; after that the course's TTS voice auto-plays new symbols,
-  words and listening questions. The sheet also lists the device's voices for the course
-  language (novelty voices hidden) with a tap-to-preview picker.
+  is the user gesture Safari needs. Voices are pre-rendered clips per symbol and word
+  (`courses/<id>-audio/`, generated with a neural TTS — the kana course uses edge-tts
+  `ja-JP-NanamiNeural`), exactly like the clone's per-option mp3s; the device's own TTS voices
+  are offered as alternatives in the same sheet.
 - **Mastery takes days.** A symbol can climb at most two levels per day, so the chart turns
   gold only after real spaced repetition.
 
 ## Run it
 
-It is static. Any file server works.
+It is static. Any file server works; the bundled one adds `Cache-Control: no-cache` so a phone's
+home-screen web app picks up new versions instead of keeping last week's `app.js`.
 
 ```sh
-./serve.sh                 # python http.server on :8765, bound to the LAN
+./serve.sh                 # serve.py on :8765, bound to the LAN
 open http://localhost:8765
 ```
+
+To render audio for a course: `pip install edge-tts`, then adapt `scripts/gen_audio.py`
+(voice id, course id) and run it from the repo root.
 
 On a phone on the same Wi-Fi: `http://<your-machine-ip>:8765`. Add to Home Screen for a
 full-screen app. Progress is stored in `localStorage`, per origin — pick one address and keep
@@ -65,8 +70,11 @@ docs/COURSE.md  course authoring guide, written so an LLM can follow it
 
 ## Design notes
 
-- Follows Apple's fluid-interface rules where the web allows: feedback on pointer-down, no
-  locked-out input during transitions, springs over fixed easings, reduced-motion respected.
+- The visual system is [sanidhyy/duolingo-clone](https://github.com/sanidhyy/duolingo-clone)
+  with its Tailwind classes resolved to plain CSS: Nunito, `rounded-xl border-2 border-b-4
+  active:border-b-0` buttons, sky/green/rose cards, the 100px footer that turns green or rose,
+  the START bubble over a round lesson button, the orange/sky result cards. Light theme only,
+  like the clone.
 - Vibration uses the web Vibration API where it exists (Android). iOS Safari has no such API;
   the page toggles a hidden native `<input type="checkbox" switch>` on each tap, which is the
   one thing that makes iOS produce a haptic tick from a web page. It works on recent iOS; if it
