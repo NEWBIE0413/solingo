@@ -16,12 +16,18 @@ obvious next one.
   four rounds — hear it and pick, see the reading and pick, see the symbol and read it, match
   pairs. Every focus symbol comes back 4–5 times; every word 3 times (build from tiles, pick the
   meaning, build again, trace by hand).
-- **It moves.** Tap = answer. Correct answers chime, buzz, bump a combo counter, fly a +1 and
-  auto-advance. Misses shake, show the answer, and return two or three items later. Steps slide;
-  the session ends with confetti and XP.
+- **It moves like Duolingo.** Select, then *확인*. Correct answers turn the footer green, chime,
+  buzz, bump a combo counter and fly a +1; *계속* slides the next step in instantly — nothing
+  auto-advances, nothing waits. Misses turn the footer rose, show the answer, and return two or
+  three items later. Buttons and cards use the 2px/4px-bottom-border "press" that Duolingo uses.
+- **Speak it.** Word rounds include a *따라 읽어보세요* step: tap the mic, say the word, and the
+  Web Speech API grades it leniently (kana-normalised similarity; kanji transcriptions are
+  accepted). Skippable when recognition is unavailable.
+- **Leave any time.** Progress is saved after every step; the home button becomes *이어서 하기*.
 - **Sound that actually plays on iPhone.** The first tap opens a "turn on sound?" sheet, which
   is the user gesture Safari needs; after that the course's TTS voice auto-plays new symbols,
-  words and listening questions.
+  words and listening questions. The sheet also lists the device's voices for the course
+  language (novelty voices hidden) with a tap-to-preview picker.
 - **Mastery takes days.** A symbol can climb at most two levels per day, so the chart turns
   gold only after real spaced repetition.
 
@@ -61,7 +67,11 @@ docs/COURSE.md  course authoring guide, written so an LLM can follow it
 
 - Follows Apple's fluid-interface rules where the web allows: feedback on pointer-down, no
   locked-out input during transitions, springs over fixed easings, reduced-motion respected.
-- Vibration uses the web Vibration API, which iOS Safari does not expose. Android phones buzz.
+- Vibration uses the web Vibration API where it exists (Android). iOS Safari has no such API;
+  the page toggles a hidden native `<input type="checkbox" switch>` on each tap, which is the
+  one thing that makes iOS produce a haptic tick from a web page. It works on recent iOS; if it
+  doesn't on yours, nothing else breaks.
+- Sound effects (`sounds/`) come from sanidhyy/duolingo-clone (MIT).
 - Handwriting is a plain canvas with a faint model glyph; there is no stroke recognition.
   The learner hides the model and judges themself. It is honest and it works.
 
