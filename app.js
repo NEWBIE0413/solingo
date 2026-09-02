@@ -140,9 +140,9 @@ function startSession(){
   if(ss){({steps,si,score,combo,newK}=ss);newK=newK||[]}else{steps=buildSession();si=0;score={ok:0,no:0};combo=0}
   $('#lesson').classList.add('on');$('#stage').innerHTML='';$('#l-combo').textContent=combo>=2?`🔥${combo}`:'';renderStep();persist();
 }
-$('#start').addEventListener('click',()=>{sfx.tap();haptic('tap');if(S.sound===null)askPerm(startSession);else{if(S.sound){soundOn=true;unlockAudio()}startSession()}});
+$('#start').addEventListener('click',()=>{sfx.tap();if(S.sound===null)askPerm(startSession);else{if(S.sound){soundOn=true;unlockAudio()}startSession()}});
 $('#l-x').addEventListener('click',()=>{persist();save();state='idle';$('#lesson').classList.remove('on');renderHome();toast('저장했어요. 이어서 할 수 있어요')});
-function setFoot(mode,label,verdict=''){const f=$('#l-foot');f.className='foot'+(mode?' '+mode:'');const b=$('#l-btn');b.textContent=label;b.className='btn sm '+(mode==='no'?'danger':'secondary');$('#l-verdict').innerHTML=verdict}
+function setFoot(mode,label,verdict=''){const f=$('#l-foot');f.className='foot'+(mode?' '+mode:'');const b=$('#l-btn');b.textContent=label;b.className='btn lg '+(mode==='no'?'danger':'secondary');$('#l-verdict').innerHTML=verdict}
 function lock(v){const b=$('#l-btn');b.disabled=v}
 function renderStep(){
   if(si>=steps.length)return finish();
@@ -165,14 +165,14 @@ function onResult(r){
   save();persist();
 }
 $('#l-btn').addEventListener('click',e=>{
-  const b=e.currentTarget; if(b.disabled)return; sfx.tap();haptic('tap');wave(b);
+  const b=e.currentTarget; if(b.disabled)return; sfx.tap();wave(b);
   if(state==='home'){state='idle';clearPersist();renderHome();startSession();return}
   if(state==='answer'){onResult(checkFn?checkFn():null);return}
   advance();
 });
 function flyXP(){const e=document.createElement('div');e.className='fly';e.textContent='+1';const r=$('#l-combo').getBoundingClientRect();e.style.left=(r.left-10)+'px';e.style.top=(r.top+8)+'px';document.body.appendChild(e);setTimeout(()=>e.remove(),900)}
 // select → 확인 (Duolingo flow). Selecting only highlights; the footer button commits.
-const optHandler=(b,getSel)=>b.addEventListener('click',e=>{const o=e.target.closest('.opt');if(!o||state!=='answer')return;$$('.opt',b).forEach(x=>x.classList.remove('sel'));o.classList.add('sel');sfx.pop();haptic('tap');getSel(o.dataset.v);lock(false)});
+const optHandler=(b,getSel)=>b.addEventListener('click',e=>{const o=e.target.closest('.opt');if(!o||state!=='answer')return;$$('.opt',b).forEach(x=>x.classList.remove('sel'));o.classList.add('sel');sfx.pop();getSel(o.dataset.v);lock(false)});
 function markOpts(b,answer,sel){$$('.opt',b).forEach(x=>{if(x.dataset.v===answer){x.classList.remove('sel');x.classList.add('ok');wave(x)}else if(x.dataset.v===sel){x.classList.remove('sel');x.classList.add('no')}else x.classList.add('dim')})}
 
 // ---- exercises ----
@@ -182,7 +182,7 @@ function intro(s,b){
   ${ex?`<div style="text-align:center;margin-top:10px"><div class="wordline kana">${tok(ex[0]).map(k=>k===s.k?`<span class="hi">${k}</span>`:k).join('')}</div><div class="meaning">${ex[1]} · ${tok(ex[0]).map(rom).join(' ')}</div></div>`:''}
   <p class="tiny" style="text-align:center;margin-top:14px">듣고 따라 말해보세요</p>`;
   setTimeout(()=>speak(s.k),250); if(ex)setTimeout(()=>speak(ex[0]),1500);
-  lock(false); $('#l-btn').textContent='다음'; checkFn=()=>null;
+  lock(false); setFoot('','다음'); state='next'; checkFn=null;
 }
 function trace(s,b,word){
   const target=word||s.k;
@@ -201,7 +201,7 @@ function trace(s,b,word){
   const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
   cv.addEventListener('pointerdown',e=>{try{cv.setPointerCapture(e.pointerId)}catch{}cur=[pt(e)];draw();e.preventDefault()});
   cv.addEventListener('pointermove',e=>{if(!cur)return;cur.push(pt(e));draw()});
-  const up=()=>{if(cur){strokes.push(cur);cur=null;draw();lock(false)}};
+  const up=()=>{if(cur){strokes.push(cur);cur=null;draw();if(state==='answer'){state='next';setFoot('','다음');if(word)gradeWord(word,true)}lock(false)}};
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
   b.addEventListener('click',e=>{const a=e.target.dataset.a;if(a==='clear'){strokes.length=0;draw()}if(a==='ghost'){ghost=!ghost;e.target.textContent='본보기 '+(ghost?'숨기기':'보기');draw()}if(a)sfx.pop()});
   requestAnimationFrame(fit); setTimeout(()=>speak(target),300); checkFn=()=>null;
@@ -221,7 +221,7 @@ function listen(s,b){if(!soundOn)return chooseKana(s,b);const opts=shuffle([s.k,
   optHandler(b,v=>sel=v); s.sol=`${s.k} (${rom(s.k)})`; checkFn=()=>{const ok=sel===s.k;markOpts(b,s.k,sel);grade(s.k,ok);return ok};}
 function match(s,b){const left=shuffle(s.ks),right=shuffle(s.ks);let a=null,pairs=0,wrong=0;
   b.innerHTML=`<div class="prompt">짝을 맞추세요</div><div class="match"><div class="col">${left.map(k=>`<button class="opt" data-side="l" data-v="${k}"><div class="kana">${k}</div></button>`).join('')}</div><div class="col">${right.map(k=>`<button class="opt" data-side="r" data-v="${k}"><span class="romaji" style="font-size:20px">${rom(k)}</span></button>`).join('')}</div></div>`;
-  b.addEventListener('click',e=>{const o=e.target.closest('.opt');if(!o||o.classList.contains('dim')||state!=='answer')return;sfx.pop();haptic('tap');
+  b.addEventListener('click',e=>{const o=e.target.closest('.opt');if(!o||o.classList.contains('dim')||state!=='answer')return;sfx.pop();
     if(a&&a.dataset.side===o.dataset.side){a.classList.remove('sel');a=o;o.classList.add('sel');return}
     if(!a){a=o;o.classList.add('sel');return}
     if(a.dataset.v===o.dataset.v){a.classList.remove('sel');[a,o].forEach(x=>{x.classList.add('ok');wave(x);setTimeout(()=>x.classList.add('dim'),350)});speak(o.dataset.v);tone([[700,1400,0,.08]],'sine',.1);haptic('ok');grade(o.dataset.v,true);pairs++;a=null;
@@ -233,7 +233,7 @@ function build(s,b){const parts=tok(s.w);const bank=shuffle([...parts,...s.extra
   <div class="slots"></div><div class="bank">${bank.map((k,i)=>`<button class="tile kana" data-i="${i}" data-v="${k}">${k}</button>`).join('')}</div>`;
   const slots=$('.slots',b),bk=$('.bank',b);
   const render=()=>{slots.innerHTML=chosen.map(c=>`<button class="tile kana" data-i="${c.i}">${c.v}</button>`).join('');$$('.tile',bk).forEach(t=>t.classList.toggle('used',chosen.some(c=>c.i==t.dataset.i)));lock(!chosen.length)};
-  bk.addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t||state!=='answer')return;sfx.pop();haptic('tap');chosen.push({i:+t.dataset.i,v:t.dataset.v});render()});
+  bk.addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t||state!=='answer')return;sfx.pop();chosen.push({i:+t.dataset.i,v:t.dataset.v});render()});
   slots.addEventListener('click',e=>{const t=e.target.closest('.tile');if(!t||state!=='answer')return;sfx.pop();chosen.splice(chosen.findIndex(c=>c.i==t.dataset.i),1);render()});
   setTimeout(()=>speak(s.w),300);
   s.sol=`${s.w}`; checkFn=()=>{const ok=chosen.map(c=>c.v).join('')===s.w;speak(s.w);slots.style.borderColor=ok?'var(--green)':'var(--rose)';gradeWord(s.w,ok);return ok};}
@@ -242,7 +242,7 @@ function wordMean(s,b){const opts=shuffle([s.m,...s.opts]);let sel=null;
   <div class="opts">${opts.map(o=>`<button class="opt" data-v="${o}"><span style="font-size:18px;font-weight:700">${o}</span></button>`).join('')}</div>`;
   setTimeout(()=>speak(s.w),300);
   optHandler(b,v=>sel=v); s.sol=`${s.w} = ${s.m} (${tok(s.w).map(rom).join(' ')})`; checkFn=()=>{const ok=sel===s.m;markOpts(b,s.m,sel);gradeWord(s.w,ok);return ok};}
-function traceWord(s,b){trace(s,b,s.w);b.insertAdjacentHTML('afterbegin',`<div class="wordline kana">${s.w}</div><div class="meaning" style="text-align:center;margin-bottom:8px">${s.m}</div>`);checkFn=()=>{gradeWord(s.w,true);return null}}
+function traceWord(s,b){trace(s,b,s.w);b.insertAdjacentHTML('afterbegin',`<div class="wordline kana">${s.w}</div><div class="meaning" style="text-align:center;margin-bottom:8px">${s.m}</div>`)}
 function speakEx(s,b){
   b.innerHTML=`<div class="prompt">따라 읽어보세요</div><div class="hero" style="padding-top:0"><div class="wordline kana" style="font-size:64px">${s.w}</div><div class="romaji">${tok(s.w).map(rom).join(' ')}</div><div class="meaning">${s.m}</div><button class="spk" data-say="${s.w}">🔊</button></div>
   <button class="mic" id="mic">🎙 눌러서 말하기</button><div class="heard" id="heard"></div>
@@ -287,6 +287,14 @@ function finish(){
 function confetti(){const cv=$('#confetti');const c=cv.getContext('2d');cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;c.scale(devicePixelRatio,devicePixelRatio);
   const cols=['#ffc800','#1cb0f6','#58cc02','#ff4b4b','#ff9600','#ce82ff'];const P=Array.from({length:140},()=>({x:innerWidth/2+(Math.random()-.5)*120,y:innerHeight*.45,vx:(Math.random()-.5)*14,vy:-Math.random()*16-6,r:Math.random()*6+3,c:cols[Math.random()*cols.length|0],a:Math.random()*6,va:(Math.random()-.5)*.4}));
   let t=0;(function f(){c.clearRect(0,0,innerWidth,innerHeight);for(const p of P){p.vy+=.45;p.x+=p.vx;p.y+=p.vy;p.vx*=.99;p.a+=p.va;c.save();c.translate(p.x,p.y);c.rotate(p.a);c.fillStyle=p.c;c.fillRect(-p.r/2,-p.r/2,p.r,p.r*1.6);c.restore()}if(t++<120)requestAnimationFrame(f);else c.clearRect(0,0,innerWidth,innerHeight)})()}
+
+// ================= press feel =================
+// iOS Safari applies :active to touches unreliably, so the pressed state is driven by pointer events instead.
+const PRESSABLE='.btn,.opt,.tile,.spk,.mic,.start,.voice';
+document.addEventListener('pointerdown',e=>{const el=e.target.closest(PRESSABLE);if(!el||el.disabled)return;el.classList.add('pressed');haptic('tap')},{passive:true});
+const unpress=()=>$$('.pressed').forEach(el=>el.classList.remove('pressed'));
+for(const ev of ['pointerup','pointercancel'])document.addEventListener(ev,unpress,{passive:true});
+document.addEventListener('touchstart',()=>{},{passive:true});
 
 // ================= boot =================
 (async()=>{const id=new URLSearchParams(location.search).get('course')||'ja-kana';await loadCourse(id);loadState();if(S.sound===true)soundOn=true;pickVoice();renderHome()})();
